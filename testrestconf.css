@@ -1,0 +1,25 @@
+body {
+	margin: 0; 
+	padding: 20px 20px 20px ; 
+    color: #505050; 
+    background-color: #f3f3f3;
+	font-family: arial, helvetica, sans-serif ;
+	font-size: 12pt ;
+}
+h1, h2 {
+    text-align: center;
+}
+.odd {
+	background-color: blanchedalmond;
+}
+.even {
+	/*background-color: powderblue;*/
+	background-color: #cde1ff;
+}
+.result td {
+	border: none;
+	padding: 8px;
+}
+.result tr:hover {
+	background-color: gold;
+}
