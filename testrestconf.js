@@ -18,34 +18,46 @@ class ModuleACL {
         this.aclRuleURL = this.aclRulesURL + "/" + this.aclRule + "=" + this.aclRuleParam;
         // https://docs.netgate.com/tnsr/en/latest/api/netgate-acl.html#tag/acl-config/paths/~1data~1netgate-acl:acl-config~1netgate-acl:acl-table~1netgate-acl:acl-list={acl-name}~1netgate-acl:acl-rules~1netgate-acl:acl-rule={sequence}/post
         this.ruleTemplate = {
+            "sequence": 0,
+            "acl-rule-description": "string",
+            "action": "deny",
+            "ip-version": "unknown",
+            "protocol": "string",
+            "src-ip-prefix": "string",
+            "src-first-port": 0,
             "src-last-port": 0,
+            "dst-ip-prefix": "string",
+            "dst-first-port": 0,
+            "dst-last-port": 0,
+            "tcp-flags-mask": 0,
+            "tcp-flags-value": 0,
             "icmp-first-code": 0,
             "icmp-last-code": 0,
-            "acl-rule-description": "string",
             "icmp-first-type": 0,
-            "tcp-flags-mask": 0,
-            "ip-version": "unknown",
-            "src-first-port": 0,
-            "sequence": 0,
-            "protocol": "string",
-            "dst-last-port": 0,
-            "dst-ip-prefix": "string",
-            "action": "deny",
-            "tcp-flags-value": 0,
-            "src-ip-prefix": "string",
-            "icmp-last-type": 0,
-            "dst-first-port": 0
-        
+            "icmp-last-type": 0
         };
         this.renderer = new Renderer(this);
+        this.sequences = {};
+    }
+
+    storeSequences(aclName, list) {
+        var sequences = [];
+        var rules = list[this.aclRules]["acl-rule"];
+        for (var i = 0; i < rules.length; i++) {
+            var seq = rules[i]["sequence"];
+            sequences.push(seq);
+        }
+        this.sequences[aclName] = sequences;
     }
 
     getRules(aclName) {
         var url = this.aclRulesURL.replace(this.aclListParam, aclName);
         var renderer = this.renderer;
+        var that = this;
         this.request("GET", url)
             .then(function(req) {
                 var rules = JSON.parse(req.responseText);
+                that.storeSequences(aclName, rules);
                 renderer.renderRuleList(aclName, rules);
             })
             .catch(function(error) {
@@ -53,7 +65,7 @@ class ModuleACL {
             });
     }
 
-    createRule(aclName, rule) {
+    createOrUpdateRule(aclName, rule) {
         var sequence = rule["sequence"];
         if (sequence == undefined) { 
             return;
@@ -71,6 +83,27 @@ class ModuleACL {
              console.log("error", error);
          })
     }
+
+    deleteRule(aclName, rule) {
+        var sequence = rule["sequence"];
+        if (sequence == undefined) {
+            return;
+        }
+        var that = this;
+        var url = this.aclRuleURL.replace(this.aclListParam, aclName).replace(this.aclRuleParam, sequence);
+
+        console.log(url)
+        this.request("DELETE", url)
+        .then(function(req) {
+           that.getRules(aclName);
+           that.renderer.clearPanel();
+           that.renderer.notifyDeleteRule(sequence);
+        })
+        .catch(function(error) {
+            console.log("error", error);
+        })
+    }
+    // Sends the http request
     // https://gomakethings.com/promise-based-xhr/
     request(method, url, body) {
         var request = new XMLHttpRequest();
@@ -100,6 +133,12 @@ class ModuleACL {
         );
     };
     
+    // returns true if the passed value belongs to the rule sequence list
+    isInRuleSequences(aclName, sequenceValue) {
+        var sequences = this.sequences[aclName];
+        var index = sequences.indexOf(sequenceValue);
+        return (index > -1);
+    }
 
 
 };
@@ -152,10 +191,11 @@ class Renderer {
 
         var that = this;
         this.htmlACLElement.onclick = function(evt) {
+            that.unselectAll();
             var elem = evt.target;
             var row = elem.parentNode;
-            row.classList.add("selected");
             if (elem.nodeName == "TD" && row.nodeName == "TR") {
+                row.classList.add("selected");
                 var children = row.children;
                 var data = {};
                 for (var i = 0; i < children.length; i++) {
@@ -166,7 +206,6 @@ class Renderer {
                 }
                 that.updatePanel(data)
             }
-
         };
     }
 
@@ -187,8 +226,9 @@ class Renderer {
             }
             i++;
         }
-        content = content + "<br><br><button type='button' id='buttonCreateRule'>Create Rule</button>";
-        content = content + "&nbsp;&nbsp;&nbsp;&nbsp;<button type='button' id='buttonClear'>Clear</button>";
+        content = content + "<br><br><button type='button' id='buttoncreateOrUpdateRule'>Update or Create Rule</button>";
+        content = content + "&nbsp;&nbsp;&nbsp;&nbsp;<button type='button' id='buttonClearPanel'>Clear</button>";
+        content = content + "&nbsp;&nbsp;&nbsp;&nbsp;<button type='button' id='buttonDeleteRule'>Delete Rule</button>";
         this.htmlPanelElement.innerHTML = content;
 
         var panelFields = this.panelFields;
@@ -198,23 +238,39 @@ class Renderer {
         }
 
         var that = this;
-        var htmlClear = document.querySelector("#buttonClear");
+        var htmlClear = document.querySelector("#buttonClearPanel");
         htmlClear.onclick = function() {
             that.clearPanel();
+            that.unselectAll();
         }
 
-        var htmlButton = document.querySelector("#buttonCreateRule");
-        htmlButton.onclick = function() { 
-            var parsed = that.parseData(panelFields);
+        var htmlCreateButton = document.querySelector("#buttoncreateOrUpdateRule");
+        htmlCreateButton.onclick = function() { 
+            var parsed = that.parsePanelFields();
             var aclName = that.currentACL;
             if (parsed) {
-                that.moduleACL.createRule(aclName, parsed);
+                var seq = parsed["sequence"];
+                if (that.moduleACL.isInRuleSequences(aclName, seq) && that.confirmUpdateRule(seq)) { // if the sequence number exists, we're about to update an existing rule
+                }
+                that.moduleACL.createOrUpdateRule(aclName, parsed);
             }
          };
+
+         var htmlDeleteButton = document.querySelector("#buttonDeleteRule");
+         htmlDeleteButton.onclick = function() {
+             var parsed = that.parsePanelFields(true);
+             var aclName = that.currentACL;
+             if (parsed) {
+                 if (that.confirmDeleteRule(parsed["sequence"])) {
+                    that.moduleACL.deleteRule(aclName, parsed);
+                 }
+             }
+         }
     }
 
-    // Parses the submitted values and returns an object in the expected format or null
-    parseData(data) {
+    // Parses the panel field values and returns an object in the expected format or null
+    parsePanelFields(checkOnlySequence) {
+        var data = this.panelFields;
         var ruleTemplate = this.ruleTemplate;
         var parsed = {};
         var size = 0;
@@ -234,9 +290,29 @@ class Renderer {
                 }
             }
         }
-        if (size > 0 && parsed["sequence"] != undefined) {
+        var ipVersion = parsed["ip-version"];
+        var testIpversion = (ipVersion == "unknown" || ipVersion == "ipv4" || ipVersion == "ipv6");
+        var action = parsed["action"];
+        var testAction = (action == "deny" || action == "permit" || action == "reflect");
+        var testSequence = (parsed["sequence"] != undefined);
+        var testMandatory = testSequence;
+        if (!checkOnlySequence) {
+            testMandatory = (testSequence && testAction && testIpversion);
+        }
+        if (size > 0 && testMandatory) {
             return parsed;
         }
+        var alerttMsg = "ERROR : \n\n";
+        if (!testSequence) { 
+            alerttMsg = alerttMsg + "- Sequence number is missing.\n\n"; 
+        }
+        if (!testAction && !checkOnlySequence) {
+            alerttMsg = alerttMsg + "- action must be : \"deny\", \"permit\" or \"reflect\".\n\n";
+        }
+        if (!testIpversion && !checkOnlySequence) {
+            alerttMsg = alerttMsg + "- ip-version must be : \"unknown\", \"ipv4\" or \"ipv6\".\n";
+        }
+        alert(alerttMsg);
         return null;
     }
 
@@ -255,6 +331,26 @@ class Renderer {
             var elem = fields[p];
             elem.value = data[p];           
         }
+    }
+
+    unselectAll() {
+        var htmlACLElement = this.htmlACLElement;
+        var selectedItems = htmlACLElement.querySelectorAll(".selected");
+        for (var i = 0; i < selectedItems.length; i++) {
+            selectedItems[i].classList.remove("selected");
+        }
+    }
+
+    notifyDeleteRule(sequence) {
+        window.alert("Rule " + sequence + " succesfully deleted.");
+    }
+    confirmDeleteRule(sequence) {
+        var confirm = window.confirm("Delete rule sequence number " + sequence + " ?");
+        return confirm;
+    }
+    confirmUpdateRule(sequence) {
+        var confirm = window.confirm("About to update rule number " + sequence + " ?");
+        return confirm;
     }
 
 };
