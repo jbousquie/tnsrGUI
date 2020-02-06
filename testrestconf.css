@@ -1,10 +1,12 @@
 body {
 	margin: 0; 
-	padding: 20px 20px 20px ; 
     color: #505050; 
     background-color: #f3f3f3;
 	font-family: arial, helvetica, sans-serif ;
 	font-size: 12pt ;
+}
+#main {
+	padding: 20px 20px 20px ;
 }
 h1, h2 {
     text-align: center;
@@ -22,4 +24,11 @@ h1, h2 {
 }
 .result tr:hover {
 	background-color: gold;
+}
+#panel {
+	position: fixed;
+	bottom: 0%;
+	width: 100%;
+	background-color: beige;
+	padding: 20px 20px 20px ;
 }

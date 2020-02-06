@@ -8,12 +8,15 @@ class ModuleACL {
         this.aclTable = "netgate-acl:acl-table";
         this.aclList = "netgate-acl:acl-list";
         this.aclListParam = "{acl-name}";
+        this.aclRuleParam = "{sequence}";
         this.aclRules = "netgate-acl:acl-rules";
         this.aclRule = "netgate-acl:acl-rule";
         this.aclConfigURL = this.baseURL + "/data/" + this.aclConfig;
         this.aclTableURL = this.aclConfigURL + "/" + this.aclTable;
         this.aclListURL = this.aclTableURL + "/" + this.aclList + "=" + this.aclListParam;
         this.aclRulesURL = this.aclListURL + "/" + this.aclRules;
+        this.aclRuleURL = this.aclRulesURL + "/" + this.aclRule + "=" + this.aclRuleParam;
+        // https://docs.netgate.com/tnsr/en/latest/api/netgate-acl.html#tag/acl-config/paths/~1data~1netgate-acl:acl-config~1netgate-acl:acl-table~1netgate-acl:acl-list={acl-name}~1netgate-acl:acl-rules~1netgate-acl:acl-rule={sequence}/post
         this.ruleTemplate = {
             "src-last-port": 0,
             "icmp-first-code": 0,
@@ -43,13 +46,31 @@ class ModuleACL {
         this.request("GET", url)
             .then(function(req) {
                 var rules = JSON.parse(req.responseText);
-                renderer.renderRuleList(rules);
+                renderer.renderRuleList(aclName, rules);
             })
             .catch(function(error) {
                 console.log("error", error);
             });
     }
 
+    createRule(aclName, rule) {
+        var sequence = rule["sequence"];
+        if (sequence == undefined) { 
+            return;
+        }
+        var that = this;
+        var url = this.aclRuleURL.replace(this.aclListParam, aclName).replace(this.aclRuleParam, sequence);
+        var objRule = {"netgate-acl:acl-rule" : rule}
+        var body = JSON.stringify(objRule);
+        this.request("PUT", url, body)
+         .then(function(req) {
+            that.getRules(aclName);
+            that.renderer.clearPanel();
+         })
+         .catch(function(error) {
+             console.log("error", error);
+         })
+    }
     // https://gomakethings.com/promise-based-xhr/
     request(method, url, body) {
         var request = new XMLHttpRequest();
@@ -72,12 +93,14 @@ class ModuleACL {
                 };
                 // Setup our HTTP request
                 request.open(method || 'GET', url, true);
+                request.setRequestHeader('Content-type','application/yang-data+json; charset=utf-8');
                 // Send the request
-                request.send();
+                request.send(body);
             } 
         );
     };
     
+
 
 };
 
@@ -87,31 +110,122 @@ class Renderer {
         this.aclRules = this.moduleACL.aclRules;
         this.ruleTemplate = this.moduleACL.ruleTemplate;
         this.htmlACLElement = document.querySelector("#acls");
+        this.htmlPanelElement = document.querySelector("#panel");
+        this.submittedFields = {};
+        this.currentACL = "";
+
+        this.createPanel();
     }
 
-    renderRuleList(list) {
-        var rules = list[this.aclRules]["acl-rule"];
-        var ruleTemplate = this.ruleTemplate;
-        var content = "<table class='result'><tr>";
-        for (var property in ruleTemplate) {
-            content = content + "<th>" + property + "</th>";
+    renderRuleList(aclName, list) {
+        var content = "";
+        if (!list) {
+            content = "Erreur : liste d'ACL demandée non trouvée";
         }
-        content = content + '</tr>';
-        for (var i = 0; i < rules.length; i++) {
-            var styl = (i % 2 == 0) ? "odd" : "even";
-            var rule = rules[i];
-            content = content + "<tr class='" + styl + "'>";
-            for (var prop in ruleTemplate) {
-                var data = "";
-                if (rule[prop]) {
-                    data = rule[prop];
-                }
-                content = content + "<td>" + data + "</td>";
+        else {
+            var rules = list[this.aclRules]["acl-rule"];
+            var ruleTemplate = this.ruleTemplate;
+            content = "<h3>ACL name : " + aclName + "</h3>";
+            content = content + "<table class='result'><tr>";
+            for (var property in ruleTemplate) {
+                content = content + "<th>" + property + "</th>";
             }
-            content = content + "</tr>";
+            content = content + '</tr>';
+            for (var i = 0; i < rules.length; i++) {
+                var styl = (i % 2 == 0) ? "odd" : "even";
+                var rule = rules[i];
+                content = content + "<tr class='" + styl + "'>";
+                for (var prop in ruleTemplate) {
+                    var data = "";
+                    if (rule[prop]) {
+                        data = rule[prop];
+                    }
+                    content = content + "<td>" + data + "</td>";
+                }
+                content = content + "</tr>";
+            }
+            content = content + "</table>";
+
         }
-        content = content + "</table>";
         this.htmlACLElement.innerHTML = content;
+        this.currentACL = aclName;
+    }
+
+    // Populates the panel for rule creation
+    createPanel() {
+        var content = "";
+        var ruleTemplate= this.ruleTemplate;
+        var nbPerLine = 6;
+        var i = 1;
+        
+        for (var p in ruleTemplate) {
+            var label = "<label for='" + p + "'>" + p + " : </label>";
+            var input = "<input type='text' id='" + p + "' name='" + p + "' style='width:2em'>&nbsp;&nbsp;&nbsp;&nbsp;";
+            var field = label + input;
+            content = content + field;
+            if (i % nbPerLine == 0) {
+                content = content + "<br>";
+            }
+            i++;
+        }
+        content = content + "<br><br><button type='button' id='buttonCreateRule'>Create Rule</button>";
+        content = content + "&nbsp;&nbsp;&nbsp;&nbsp;<button type='button' id='buttonClear'>Clear</button>";
+        this.htmlPanelElement.innerHTML = content;
+
+        var submittedFields = this.submittedFields;
+        for (var p  in ruleTemplate) {
+            var htlmField = document.querySelector("#" + p);
+            submittedFields[p] = htlmField;
+        }
+
+        var that = this;
+        var htmlClear = document.querySelector("#buttonClear");
+        htmlClear.onclick = function() {
+            that.clearPanel(submittedFields);
+        }
+
+        var htmlButton = document.querySelector("#buttonCreateRule");
+        htmlButton.onclick = function() { 
+            var parsed = that.parseData(submittedFields);
+            var aclName = that.currentACL;
+            if (parsed) {
+                that.moduleACL.createRule(aclName, parsed);
+            }
+         };
+    }
+
+    // Parses the submitted values and returns an object in the expected format or null
+    parseData(data) {
+        var ruleTemplate = this.ruleTemplate;
+        var parsed = {};
+        var size = 0;
+        for (var p in data) {
+            var value = data[p].value;
+            if (value != "") {                  // is some value was submitted
+                if (ruleTemplate[p] == 0) {     // all values are string by default, so check if need for casting to int
+                    var numval = parseInt(value);
+                    if (!isNaN(numval)) {
+                        parsed[p] = numval;
+                        size++;
+                    }
+                }
+                else {
+                    parsed[p] = value;
+                    size++;
+                }
+            }
+        }
+        if (size > 0 && parsed["sequence"] != undefined) {
+            return parsed;
+        }
+        return null;
+    }
+
+    clearPanel(fields) {
+        for (var f in fields) {
+            var field = fields[f];
+            field.value = "";
+        }
     }
 };
 
