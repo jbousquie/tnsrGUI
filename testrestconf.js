@@ -111,7 +111,7 @@ class Renderer {
         this.ruleTemplate = this.moduleACL.ruleTemplate;
         this.htmlACLElement = document.querySelector("#acls");
         this.htmlPanelElement = document.querySelector("#panel");
-        this.submittedFields = {};
+        this.panelFields = {};
         this.currentACL = "";
 
         this.createPanel();
@@ -140,7 +140,7 @@ class Renderer {
                     if (rule[prop]) {
                         data = rule[prop];
                     }
-                    content = content + "<td>" + data + "</td>";
+                    content = content + "<td data-property='" + prop + "'>" + data + "</td>";
                 }
                 content = content + "</tr>";
             }
@@ -149,6 +149,25 @@ class Renderer {
         }
         this.htmlACLElement.innerHTML = content;
         this.currentACL = aclName;
+
+        var that = this;
+        this.htmlACLElement.onclick = function(evt) {
+            var elem = evt.target;
+            var row = elem.parentNode;
+            row.classList.add("selected");
+            if (elem.nodeName == "TD" && row.nodeName == "TR") {
+                var children = row.children;
+                var data = {};
+                for (var i = 0; i < children.length; i++) {
+                    var child = children[i];
+                    var property = child.dataset.property;
+                    var value = child.innerText;
+                    data[property] = value;
+                }
+                that.updatePanel(data)
+            }
+
+        };
     }
 
     // Populates the panel for rule creation
@@ -172,21 +191,21 @@ class Renderer {
         content = content + "&nbsp;&nbsp;&nbsp;&nbsp;<button type='button' id='buttonClear'>Clear</button>";
         this.htmlPanelElement.innerHTML = content;
 
-        var submittedFields = this.submittedFields;
+        var panelFields = this.panelFields;
         for (var p  in ruleTemplate) {
             var htlmField = document.querySelector("#" + p);
-            submittedFields[p] = htlmField;
+            panelFields[p] = htlmField;
         }
 
         var that = this;
         var htmlClear = document.querySelector("#buttonClear");
         htmlClear.onclick = function() {
-            that.clearPanel(submittedFields);
+            that.clearPanel();
         }
 
         var htmlButton = document.querySelector("#buttonCreateRule");
         htmlButton.onclick = function() { 
-            var parsed = that.parseData(submittedFields);
+            var parsed = that.parseData(panelFields);
             var aclName = that.currentACL;
             if (parsed) {
                 that.moduleACL.createRule(aclName, parsed);
@@ -221,12 +240,23 @@ class Renderer {
         return null;
     }
 
-    clearPanel(fields) {
+    clearPanel() {
+        var fields = this.panelFields;
         for (var f in fields) {
             var field = fields[f];
             field.value = "";
         }
     }
+
+    updatePanel(data) {
+        this.clearPanel();
+        var fields = this.panelFields;
+        for (var p in fields) {
+            var elem = fields[p];
+            elem.value = data[p];           
+        }
+    }
+
 };
 
 var init = function() {

@@ -6,7 +6,7 @@ body {
 	font-size: 12pt ;
 }
 #main {
-	padding: 20px 20px 20px ;
+	padding: 20px 20px 20px;
 }
 h1, h2 {
     text-align: center;
@@ -31,4 +31,7 @@ h1, h2 {
 	width: 100%;
 	background-color: beige;
 	padding: 20px 20px 20px ;
+}
+.selected {
+	background-color: orange;
 }
