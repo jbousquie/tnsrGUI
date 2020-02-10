@@ -1,3 +1,21 @@
+/**
+ * TNSR Web GUI
+ * ACL edition only
+ * MVC pattern : 
+ *   ModuleACL class is the Model
+ *   Controller class is the Controller
+ *   Renderer class is the View
+ * 
+ * Decoupling :
+ * The client must call only controller methods directly.
+ * The controller can call Model or View methods.
+ * The controller and the view don't communicate between them, they only call controller methods when needed.
+ * 
+ * The Model creates the Controller.
+ * The Controller creates the Renderer.
+ * 
+ */
+
 class ModuleACL {
     constructor(scheme, hostname, apiPath) {
         this.scheme = scheme;
@@ -36,10 +54,15 @@ class ModuleACL {
             "icmp-first-type": 0,
             "icmp-last-type": 0
         };
-        this.renderer = new Renderer(this);
+        this.controller = new Controller(this);
         this.sequences = {};
     }
 
+    /**
+     * Stores the current sequence numbers in an array
+     * @param {*} aclName 
+     * @param {*} list 
+     */
     storeSequences(aclName, list) {
         var sequences = [];
         var rules = list[this.aclRules]["acl-rule"];
@@ -50,22 +73,45 @@ class ModuleACL {
         this.sequences[aclName] = sequences;
     }
 
-    getRules(aclName) {
+    /**
+     * Gets the current rules from the aclName ACL
+     * * As it runs as a promise, 2 callback functions are passed to be executed once the rules are got (or not)
+     * @param {*} aclName 
+     * @param fulfilled the function from the controller to be executed once the rules are got : fulfilled(result)
+     * @param rejected the function from the controller to be executed in case of error
+     */
+    getRules(aclName, fulfilled, rejected) {
         var url = this.aclRulesURL.replace(this.aclListParam, aclName);
-        var renderer = this.renderer;
         var that = this;
         this.request("GET", url)
             .then(function(req) {
                 var rules = JSON.parse(req.responseText);
                 that.storeSequences(aclName, rules);
-                renderer.renderRuleList(aclName, rules);
+                if (fulfilled) {
+                    var returned = {
+                        aclName: aclName,
+                        rules: rules
+                    }
+                    that.controller.callback(fulfilled, returned);
+                }  
             })
             .catch(function(error) {
                 console.log("error", error);
+                if (rejected) {
+                    that.controller.callback(rejected, error);
+                }
             });
     }
 
-    createOrUpdateRule(aclName, rule) {
+    /**
+     * Creates a new rule in the aclName ACL from the passed rule object
+     * As it runs as a promise, 2 callback functions are passed to be executed once the rule is created are got (or not)
+     * @param {*} aclName 
+     * @param {*} rule 
+     * @param fulfilled the function from the controller to be executed once the rule is created/updated : fulfilled(result)
+     * @param rejected the function from the controller to be executed in case of error
+     */
+    createOrUpdateRule(aclName, rule, fulfilled, rejected) {
         var sequence = rule["sequence"];
         if (sequence == undefined) { 
             return;
@@ -76,6 +122,28 @@ class ModuleACL {
         var body = JSON.stringify(objRule);
         this.request("PUT", url, body)
          .then(function(req) {
+            that.getRules(aclName, fulfilled, rejected);
+         })
+         .catch(function(error) {
+             console.log("error", error);
+             if (rejected) {
+                that.controller.callback(rejected, error);
+            }
+         })
+    }
+
+    // TEST POST
+    testCreate(aclName, rule) {
+        var sequence = rule["sequence"];
+        if (sequence == undefined) { 
+            return;
+        }
+        var that = this;
+        var url = this.aclRuleURL.replace(this.aclListParam, aclName).replace(this.aclRuleParam, sequence);
+        var objRule = {"netgate-acl:acl-rule" : rule}
+        var body = JSON.stringify(objRule);
+        this.request("POST", url, body)
+         .then(function(req) {
             that.getRules(aclName);
             that.renderer.clearPanel();
          })
@@ -84,26 +152,38 @@ class ModuleACL {
          })
     }
 
-    deleteRule(aclName, rule) {
+    /**
+     * Delete the passed rule from the aclName ACL
+    * As it runs as a promise, 2 callback functions are passed to be executed once the rule is created are got (or not)
+     * @param {*} aclName 
+     * @param {*} rule 
+     * @param fulfilled the function from the controller to be executed once the rule is deleted : fulfilled(result)
+     * @param rejected the function from the controller to be executed in case of error
+     */
+    deleteRule(aclName, rule, fulfilled, rejected) {
         var sequence = rule["sequence"];
         if (sequence == undefined) {
             return;
         }
         var that = this;
         var url = this.aclRuleURL.replace(this.aclListParam, aclName).replace(this.aclRuleParam, sequence);
-
-        console.log(url)
         this.request("DELETE", url)
         .then(function(req) {
-           that.getRules(aclName);
-           that.renderer.clearPanel();
-           that.renderer.notifyDeleteRule(sequence);
+           that.controller.callback(fulfilled, sequence);
         })
         .catch(function(error) {
             console.log("error", error);
+            if (rejected) {
+                that.controller.callback(rejected, error);
+            }
         })
     }
-    // Sends the http request
+    /**
+     * Sends the REST request : GET, POST, PUT or DELETE
+     * @param {*} method 
+     * @param {*} url 
+     * @param {*} body 
+     */
     // https://gomakethings.com/promise-based-xhr/
     request(method, url, body) {
         var request = new XMLHttpRequest();
@@ -133,7 +213,11 @@ class ModuleACL {
         );
     };
     
-    // returns true if the passed value belongs to the rule sequence list
+    /**
+     * Returns true if the passed value belongs to the rule sequence list
+     * @param {*} aclName 
+     * @param {*} sequenceValue 
+     */
     isInRuleSequences(aclName, sequenceValue) {
         var sequences = this.sequences[aclName];
         var index = sequences.indexOf(sequenceValue);
@@ -152,10 +236,17 @@ class Renderer {
         this.htmlPanelElement = document.querySelector("#panel");
         this.panelFields = {};
         this.currentACL = "";
+        if (this.moduleACL.controller) {
+            this.controller = this.moduleACL.controller;
+        }
 
         this.createPanel();
     }
-
+    /**
+     * Displays the the rule list
+     * @param {*} aclName 
+     * @param {*} list 
+     */
     renderRuleList(aclName, list) {
         var content = "";
         if (!list) {
@@ -209,7 +300,9 @@ class Renderer {
         };
     }
 
-    // Populates the panel for rule creation
+    /**
+     * Populates the panel for rule creation, update or deletion
+     */
     createPanel() {
         var content = "";
         var ruleTemplate= this.ruleTemplate;
@@ -229,6 +322,10 @@ class Renderer {
         content = content + "<br><br><button type='button' id='buttoncreateOrUpdateRule'>Update or Create Rule</button>";
         content = content + "&nbsp;&nbsp;&nbsp;&nbsp;<button type='button' id='buttonClearPanel'>Clear</button>";
         content = content + "&nbsp;&nbsp;&nbsp;&nbsp;<button type='button' id='buttonDeleteRule'>Delete Rule</button>";
+        content = content + "&nbsp;&nbsp;&nbsp;&nbsp;<button type='button' id='buttonShift'>Shift From Selected Rule</button>";
+
+        // Test
+        content = content + "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<button type='button' id='buttonTest'>Test POST</button>";
         this.htmlPanelElement.innerHTML = content;
 
         var panelFields = this.panelFields;
@@ -250,9 +347,9 @@ class Renderer {
             var aclName = that.currentACL;
             if (parsed) {
                 var seq = parsed["sequence"];
-                if (that.moduleACL.isInRuleSequences(aclName, seq) && that.confirmUpdateRule(seq)) { // if the sequence number exists, we're about to update an existing rule
+                if (that.controller.isInRuleSequences(aclName, seq) && that.confirmUpdateRule(seq)) { // if the sequence number exists, we're about to update an existing rule
                 }
-                that.moduleACL.createOrUpdateRule(aclName, parsed);
+                that.controller.createOrUpdateRule(aclName, parsed);
             }
          };
 
@@ -262,13 +359,42 @@ class Renderer {
              var aclName = that.currentACL;
              if (parsed) {
                  if (that.confirmDeleteRule(parsed["sequence"])) {
-                    that.moduleACL.deleteRule(aclName, parsed);
+                    that.controller.deleteRule(aclName, parsed);
                  }
              }
          }
+
+         var htmlShiftButton = document.querySelector("#buttonShift");
+         htmlShiftButton.onclick = function() { 
+             var parsed = that.parsePanelFields(true);
+             var aclName = that.currentACL;
+             if (parsed) {
+                 var seq = parsed["sequence"];
+                 if (that.controller.isInRuleSequences(aclName, seq)) { // if the sequence number exists, we're about to update an existing rule
+                 }
+                 that.controller.shiftRowsFromSequenceNumber(aclName, 1, seq);
+             }
+          };
+         // TEST
+         var htmlTestButton = document.querySelector("#buttonTest");
+         htmlTestButton.onclick = function() { 
+             var parsed = that.parsePanelFields();
+             var aclName = that.currentACL;
+             if (parsed) {
+                 var seq = parsed["sequence"];
+                 if (that.controller.isInRuleSequences(aclName, seq) && that.confirmUpdateRule(seq)) { // if the sequence number exists, we're about to update an existing rule
+                 }
+                 that.moduleACL.testCreate(aclName, parsed);
+             }
+          };
+
+
     }
 
-    // Parses the panel field values and returns an object in the expected format or null
+    /**
+     * Parses the panel field values and returns an object in the expected format or null
+     * @param {boolean} checkOnlySequence true if the value type check must be done only on the sequence value
+     */
     parsePanelFields(checkOnlySequence) {
         var data = this.panelFields;
         var ruleTemplate = this.ruleTemplate;
@@ -315,7 +441,9 @@ class Renderer {
         alert(alerttMsg);
         return null;
     }
-
+    /**
+     * Clears the panel fields
+     */
     clearPanel() {
         var fields = this.panelFields;
         for (var f in fields) {
@@ -324,6 +452,10 @@ class Renderer {
         }
     }
 
+    /**
+     * Sets the panel fields with  the data object values
+     * @param {*} data 
+     */
     updatePanel(data) {
         this.clearPanel();
         var fields = this.panelFields;
@@ -333,6 +465,9 @@ class Renderer {
         }
     }
 
+    /**
+     * Unselect the currently selected rule in the rule list
+     */
     unselectAll() {
         var htmlACLElement = this.htmlACLElement;
         var selectedItems = htmlACLElement.querySelectorAll(".selected");
@@ -340,14 +475,25 @@ class Renderer {
             selectedItems[i].classList.remove("selected");
         }
     }
-
+    /**
+     * Notifies that a rule has just been deleted
+     * @param {*} sequence 
+     */
     notifyDeleteRule(sequence) {
         window.alert("Rule " + sequence + " succesfully deleted.");
     }
+    /**
+     * Asks confirmation for rule deletion
+     * @param {*} sequence 
+     */
     confirmDeleteRule(sequence) {
         var confirm = window.confirm("Delete rule sequence number " + sequence + " ?");
         return confirm;
     }
+    /**
+     * Asks confirmation for rule update
+     * @param {*} sequence 
+     */
     confirmUpdateRule(sequence) {
         var confirm = window.confirm("About to update rule number " + sequence + " ?");
         return confirm;
@@ -355,11 +501,112 @@ class Renderer {
 
 };
 
+
+ class Controller {
+     constructor(moduleACL) {
+        this.moduleACL = moduleACL;
+        this.renderer = new Renderer(moduleACL);
+        this.renderer.controller = this;
+        this.currentACL = "";
+     }
+     /**
+      * Displays the rules of the aclName ACL
+      */
+     displayRules(aclName) {
+         this.currentACL = aclName;
+         this.moduleACL.getRules(aclName, "renderList");
+     }
+     /**
+      * Callback function to render the rule list once the rules are downloaded
+      * @param {*} objRules 
+      */
+     renderList(objRules) {
+         var aclName = objRules.aclName;
+         var rules = objRules.rules;
+         this.renderer.renderRuleList(aclName, rules);
+     }
+    /**
+     * Creates a new rule in the aclName ACL from the passed rule object
+     * @param {*} aclName 
+     * @param {*} rule 
+     * */
+     createOrUpdateRule(aclName, rule) {
+         this.moduleACL.createOrUpdateRule(aclName, rule, "renderListAndClearPanel");
+     }
+     /**
+      * Callback function to render the rule list once the rules are downloaded, then to clear the panel
+      * @param {*} objRules 
+      */
+     renderListAndClearPanel(objRules) {
+         this.renderList(objRules);
+         this.renderer.clearPanel();
+     }
+    /**
+     * Delete the passed rule from the aclName ACL
+     * @param {*} aclName 
+     * @param {*} rule 
+     */
+     deleteRule(aclName, rule) {
+         this.moduleACL.deleteRule(aclName, rule, "notifyDeleteRule");
+
+     }/**
+      * Callback function to notify the user after a rule deletion
+      * @param {*} objRules 
+      */
+     notifyDeleteRule(sequence) {
+        this.displayRules(this.currentACL)
+        this.renderer.clearPanel();
+        this.renderer.notifyDeleteRule(sequence);
+     }
+
+     /**
+      * Generic Controller callback function
+      * This function is designed to keep the controler reference to "this" then.
+      * @param {*} fct 
+      * @param {*} param 
+      */
+     callback(fct, param) {
+         this[fct](param);
+     }
+     /**
+      * Returns true if the passed sequence number is in the aclName rule list
+      * @param {*} aclName 
+      * @param {*} sequence 
+      */
+     isInRuleSequences(aclName, sequence) {
+         return this.moduleACL.isInRuleSequences(aclName, sequence);
+     }
+     /**
+      * Shifts the rule sequence numbers for rowNb from the passed sequence number.
+      * All the rules following the passed sequence number are shifted until a free space is found before the next seq number
+      * @param {*} rowNb 
+      * @param {*} sequenceNb 
+      */
+     shiftRowsFromSequenceNumber(aclName, rowNb, sequenceNb) {
+         this.moduleACL.getRules(aclName);
+         var sequences = this.moduleACL.sequences[aclName];
+         var start = sequences.indexOf(sequenceNb);         // assuming it's up to date
+         if (start >= 0) {
+             var end = start;
+             if (sequences.length > 1) {
+                while (end < sequences.length && (sequences[end] - sequences[start] <= rowNb)) {
+                    end++;
+                }
+             }
+         }
+         this.displayRules(aclName);
+     }
+ };
+
+ /**
+ * Init script
+ */
 var init = function() {
     var apiScheme = "https://";
     var apiPath = "/restconf";
     var hostname = window.location.hostname;
 
     var myACL = new ModuleACL(apiScheme, hostname, apiPath);
-    myACL.getRules("test")
+    myACL.controller.displayRules("test");
+    //myACL.getRules("test")
 };
