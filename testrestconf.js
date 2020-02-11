@@ -11,8 +11,9 @@
  * The controller can call Model or View methods.
  * The controller and the view don't communicate between them, they only call controller methods when needed.
  * 
- * The Model creates the Controller.
- * The Controller creates the Renderer.
+ * The Model imports and creates the Controller.
+ * The Controller imports and creates the Renderer.
+ * This main script imports and creates the Model "ModuleACL".
  * 
  */
 

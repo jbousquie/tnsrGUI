@@ -59,61 +59,56 @@ class ModuleACL {
 
     /**
      * Gets the current rules from the aclName ACL
-     * * As it runs as a promise, 2 callback functions are passed to be executed once the rules are got (or not)
+     * Returns a promise
      * @param {*} aclName 
-     * @param fulfilled the function from the controller to be executed once the rules are got : fulfilled(result)
-     * @param rejected the function from the controller to be executed in case of error
      */
-    getRules(aclName, fulfilled, rejected) {
+    getRules(aclName) {
         var url = this.aclRulesURL.replace(this.aclListParam, aclName);
         var that = this;
-        this.request("GET", url)
-            .then(function(req) {
-                var rules = JSON.parse(req.responseText);
-                that.storeSequences(aclName, rules);
-                if (fulfilled) {
+        return new Promise(
+            function(resolve, reject) {
+                that.request("GET", url)
+                .then(function(req) {
+                    var rules = JSON.parse(req.responseText);
+                    that.storeSequences(aclName, rules);
                     var returned = {
                         aclName: aclName,
                         rules: rules
                     }
-                    that.controller.callback(fulfilled, returned);
-                }  
-            })
-            .catch(function(error) {
-                console.log("error", error);
-                if (rejected) {
-                    that.controller.callback(rejected, error);
-                }
-            });
+                    resolve(returned);
+                })
+                .catch(function(error) {
+                    console.log("error in getRules() : ", error);
+                    reject(error);
+                });
+            }
+        );
     }
 
     /**
      * Creates a new rule in the aclName ACL from the passed rule object
-     * As it runs as a promise, 2 callback functions are passed to be executed once the rule is created are got (or not)
+     * Returns a promise
      * @param {*} aclName 
      * @param {*} rule 
-     * @param fulfilled the function from the controller to be executed once the rule is created/updated : fulfilled(result)
-     * @param rejected the function from the controller to be executed in case of error
      */
-    createOrUpdateRule(aclName, rule, fulfilled, rejected) {
+    createOrUpdateRule(aclName, rule) {
         var sequence = rule["sequence"];
-        if (sequence == undefined) { 
-            return;
-        }
         var that = this;
         var url = this.aclRuleURL.replace(this.aclListParam, aclName).replace(this.aclRuleParam, sequence);
         var objRule = {"netgate-acl:acl-rule" : rule}
         var body = JSON.stringify(objRule);
-        this.request("PUT", url, body)
-         .then(function(req) {
-            that.getRules(aclName, fulfilled, rejected);
-         })
-         .catch(function(error) {
-             console.log("error", error);
-             if (rejected) {
-                that.controller.callback(rejected, error);
+        return new Promise(
+            function(resolve, reject) {
+                that.request("PUT", url, body)
+                    .then(function(req) {
+                        resolve(aclName);
+                })
+                .catch(function(error) {
+                    console.log("error in CreateOrUpdateRule() : ", error);
+                    reject(error);
+                });
             }
-         })
+        )
     }
 
     // TEST POST
@@ -138,32 +133,30 @@ class ModuleACL {
 
     /**
      * Delete the passed rule from the aclName ACL
-    * As it runs as a promise, 2 callback functions are passed to be executed once the rule is created are got (or not)
+     * Returns a promise
      * @param {*} aclName 
      * @param {*} rule 
-     * @param fulfilled the function from the controller to be executed once the rule is deleted : fulfilled(result)
-     * @param rejected the function from the controller to be executed in case of error
      */
-    deleteRule(aclName, rule, fulfilled, rejected) {
+    deleteRule(aclName, rule) {
         var sequence = rule["sequence"];
-        if (sequence == undefined) {
-            return;
-        }
         var that = this;
         var url = this.aclRuleURL.replace(this.aclListParam, aclName).replace(this.aclRuleParam, sequence);
-        this.request("DELETE", url)
-        .then(function(req) {
-           that.controller.callback(fulfilled, sequence);
-        })
-        .catch(function(error) {
-            console.log("error", error);
-            if (rejected) {
-                that.controller.callback(rejected, error);
+        return new Promise(
+            function(resolve, reject) {
+                that.request("DELETE", url)
+                    .then(function(req) {
+                        resolve(sequence);
+                })
+                .catch(function(error) {
+                    console.log("error in deleteRule() : ", error);
+                        reject(error);
+                })
             }
-        })
+        )
     }
     /**
      * Sends the REST request : GET, POST, PUT or DELETE
+     * Returns a promise
      * @param {*} method 
      * @param {*} url 
      * @param {*} body 
@@ -184,7 +177,8 @@ class ModuleACL {
                         // If failed
                         reject({
                             status: request.status,
-                            statusText: request.statusText
+                            statusText: request.statusText,
+                            response: JSON.parse(request.response)
                         });
                     }
                 };

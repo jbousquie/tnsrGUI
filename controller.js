@@ -12,7 +12,8 @@ class Controller {
      */
     displayRules(aclName) {
         this.currentACL = aclName;
-        this.moduleACL.getRules(aclName, "renderList");
+        this.moduleACL.getRules(aclName)
+          .then((data) => this.renderList(data));  // "() => this.method()"  is mandatory to preserve the reference to "this"
     }
     /**
      * Callback function to render the rule list once the rules are downloaded
@@ -25,29 +26,33 @@ class Controller {
     }
    /**
     * Creates a new rule in the aclName ACL from the passed rule object
+    * Then updates the displayed rule list
     * @param {*} aclName 
     * @param {*} rule 
     * */
     createOrUpdateRule(aclName, rule) {
-        this.moduleACL.createOrUpdateRule(aclName, rule, "renderListAndClearPanel");
+        this.moduleACL.createOrUpdateRule(aclName, rule)
+            .then((aclName) => {
+                this.displayRules(aclName);
+                this.clearPanel();
+             } );
     }
-    /**
-     * Callback function to render the rule list once the rules are downloaded, then to clear the panel
-     * @param {*} objRules 
-     */
-    renderListAndClearPanel(objRules) {
-        this.renderList(objRules);
-        this.renderer.clearPanel();
-    }
+
    /**
     * Delete the passed rule from the aclName ACL
     * @param {*} aclName 
     * @param {*} rule 
     */
     deleteRule(aclName, rule) {
-        this.moduleACL.deleteRule(aclName, rule, "notifyDeleteRule");
-
-    }/**
+        this.moduleACL.deleteRule(aclName, rule)
+            .then(
+                (seq) => {
+                    this.displayRules(this.currentACL);
+                    this.clearPanel();
+                    this.notifyDeleteRule(seq);
+                });
+    }
+    /**
      * Callback function to notify the user after a rule deletion
      * @param {*} objRules 
      */
@@ -58,14 +63,23 @@ class Controller {
     }
 
     /**
+     * Clears the panel
+     */
+    clearPanel() {
+        this.renderer.clearPanel();
+    }
+    
+    /**
      * Generic Controller callback function
      * This function is designed to keep the controler reference to "this" then.
      * @param {*} fct 
      * @param {*} param 
      */
+    /*
     callback(fct, param) {
         this[fct](param);
     }
+    */
     /**
      * Returns true if the passed sequence number is in the aclName rule list
      * @param {*} aclName 
