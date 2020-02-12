@@ -271,8 +271,7 @@ class ModuleACL {
                             parameters.push(param, param);
                         }
                         var callback = () => resolve(aclName);
-                        that.chainPromises(operations, parameters, callback);
-                        
+                        that.chainPromises(operations, parameters, callback);     
                     }    
                 });
         });
@@ -294,7 +293,7 @@ class ModuleACL {
             await promise(param);
         }
         if (callback) {
-            callback();
+            await callback();
         }
     }
 };

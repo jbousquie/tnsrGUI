@@ -10,19 +10,23 @@ class Controller {
     /**
      * Displays the rules of the aclName ACL
      */
-    displayRules(aclName) {
+    displayRules(aclName, selectedSequence) {
         this.currentACL = aclName;
         this.moduleACL.getRules(aclName)
-          .then((data) => this.renderList(data));  // "() => this.method()"  is mandatory to preserve the reference to "this"
+          .then((data) => this.renderList(data, selectedSequence));  // "() => this.method()"  is mandatory to preserve the reference to "this"
     }
     /**
      * Callback function to render the rule list once the rules are downloaded
      * @param {*} objRules 
      */
-    renderList(objRules) {
+    renderList(objRules, selectedSequence) {
         var aclName = objRules.aclName;
         var rules = objRules.rules;
         this.renderer.renderRuleList(aclName, rules);
+        if (selectedSequence != undefined) {
+            this.renderer.markAsSelected(selectedSequence);
+            //this.renderer.updatePanel(data);
+        }
     }
    /**
     * Creates a new rule in the aclName ACL from the passed rule object
@@ -96,7 +100,10 @@ class Controller {
      */
     shiftRowsFromSequenceNumber(aclName, rowNb, sequenceNb) {
         this.moduleACL.shiftRowsFromSequenceNumber(aclName, rowNb, sequenceNb)
-            .then((aclName) => this.displayRules(aclName));
+            .then((aclName) => {
+                this.displayRules(aclName, sequenceNb + rowNb);
+                }
+            );
     }
 };
 

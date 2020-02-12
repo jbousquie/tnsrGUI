@@ -12,6 +12,26 @@ class Renderer {
         }
 
         this.createPanel();
+
+        var that = this;
+        this.htmlACLElement.addEventListener('click', function(evt) {
+            that.unselectAll();
+            var elem = evt.target;
+            var row = elem.parentNode;
+            if (elem.nodeName == "TD" && row.nodeName == "TR") {
+                row.classList.add("selected");
+                var children = row.children;
+                var data = {};
+                for (var i = 0; i < children.length; i++) {
+                    var child = children[i];
+                    var property = child.dataset.property;
+                    var value = child.innerText;
+                    data[property] = value;
+                }
+                that.updatePanel(data)
+            }
+        }, true);  // use capture for manually dispatched events
+
     }
     /**
      * Displays the the rule list
@@ -41,7 +61,11 @@ class Renderer {
                     if (rule[prop]) {
                         data = rule[prop];
                     }
-                    content = content + "<td data-property='" + prop + "'>" + data + "</td>";
+                    var propSeq = "";
+                    if (prop == "sequence") {
+                        propSeq = " data-sequence='" + data + "'";
+                    }
+                    content = content + "<td data-property='" + prop + "'" + propSeq + ">" + data + "</td>";
                 }
                 content = content + "</tr>";
             }
@@ -50,25 +74,6 @@ class Renderer {
         }
         this.htmlACLElement.innerHTML = content;
         this.currentACL = aclName;
-
-        var that = this;
-        this.htmlACLElement.onclick = function(evt) {
-            that.unselectAll();
-            var elem = evt.target;
-            var row = elem.parentNode;
-            if (elem.nodeName == "TD" && row.nodeName == "TR") {
-                row.classList.add("selected");
-                var children = row.children;
-                var data = {};
-                for (var i = 0; i < children.length; i++) {
-                    var child = children[i];
-                    var property = child.dataset.property;
-                    var value = child.innerText;
-                    data[property] = value;
-                }
-                that.updatePanel(data)
-            }
-        };
     }
 
     /**
@@ -245,6 +250,25 @@ class Renderer {
         for (var i = 0; i < selectedItems.length; i++) {
             selectedItems[i].classList.remove("selected");
         }
+    }
+    /**
+     * Mark the rule as selected
+     */
+    markAsSelected(seqNumber) {
+        var htmlACLElement = this.htmlACLElement;
+        var elemWithSequences = htmlACLElement.querySelectorAll('[data-sequence]');
+        var i = 0;
+        var strSeq = String(seqNumber);
+        var elem;
+        while (i < elemWithSequences.length) {
+            elem = elemWithSequences[i];
+            if (elem.dataset.sequence == strSeq) {
+                break;
+            }
+            i++;
+        }
+        var click = new Event('click');
+        elem.dispatchEvent(click);
     }
     /**
      * Notifies that a rule has just been deleted
