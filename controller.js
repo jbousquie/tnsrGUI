@@ -95,18 +95,8 @@ class Controller {
      * @param {*} sequenceNb 
      */
     shiftRowsFromSequenceNumber(aclName, rowNb, sequenceNb) {
-        // this.moduleACL.getRules(aclName);
-        var sequences = this.moduleACL.sequences[aclName]; // assuming it's up to date
-        var start = sequences.indexOf(sequenceNb);         
-        if (start >= 0) {
-            var end = start;
-            if (sequences.length > 1) {
-               while (end < sequences.length && (sequences[end] - sequences[start] <= rowNb)) {
-                   end++;
-               }
-            }
-        }
-        this.displayRules(aclName);
+        this.moduleACL.shiftRowsFromSequenceNumber(aclName, rowNb, sequenceNb)
+            .then((aclName) => this.displayRules(aclName));
     }
 };
 

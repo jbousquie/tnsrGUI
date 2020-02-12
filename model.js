@@ -40,6 +40,7 @@ class ModuleACL {
         };
         this.controller = new Controller(this);
         this.sequences = {};
+        this.rules = undefined;
     }
 
     /**
@@ -58,6 +59,24 @@ class ModuleACL {
     }
 
     /**
+     * Returns the rule from the stored rules
+     * @param {*} sequence 
+     */
+    ruleFromList(sequence) {
+        var rules = this.rules;
+        if (rules) {
+            var ruleList = rules[this.aclRules]["acl-rule"];
+            for (var i = 0; i < ruleList.length; i++) {
+                var rule = ruleList[i];
+                if (rule.sequence == sequence) {
+                    return rule;
+                }
+            } 
+        }
+        return null;
+    }
+
+    /**
      * Gets the current rules from the aclName ACL
      * Returns a promise
      * @param {*} aclName 
@@ -70,6 +89,7 @@ class ModuleACL {
                 that.request("GET", url)
                 .then(function(req) {
                     var rules = JSON.parse(req.responseText);
+                    that.rules = rules;
                     that.storeSequences(aclName, rules);
                     var returned = {
                         aclName: aclName,
@@ -200,6 +220,82 @@ class ModuleACL {
         var sequences = this.sequences[aclName];
         var index = sequences.indexOf(sequenceValue);
         return (index > -1);
+    }
+
+    /**
+     * Shifts the rule sequence numbers for rowNb from the passed sequence number.
+     * All the rules following the passed sequence number are shifted until a free space is found before the next seq number
+     * @param {*} rowNb 
+     * @param {*} sequenceNb 
+     */
+    shiftRowsFromSequenceNumber(aclName, rowNb, sequenceNb) {
+        var that = this;
+        return new Promise(function(resolve, reject) {
+            that.getRules(aclName)
+                .then(() => {
+                    var sequences = that.sequences[aclName]; 
+                    var startIndex = sequences.indexOf(sequenceNb);  
+                    var finalIndex = startIndex;       
+                    if (startIndex >= 0) {
+                        var next = finalIndex + 1;
+                        if (sequences.length > 1) {
+                            while (next < sequences.length && (sequences[next] - sequences[finalIndex] <= rowNb)) {
+                                finalIndex++;
+                                next++;
+                            }
+                        }
+                        // Store promises
+                        var operations = [];
+                        var parameters = [];
+                        for (var i = finalIndex; i >= startIndex; i--) {
+                            var seq = sequences[i];
+                            var rule = that.ruleFromList(seq);
+                            var param = {
+                                seq: rule.sequence,
+                                rule: rule,
+                                aclName: aclName
+                            };
+                            var opCreate = (param) => { 
+                                var rule = param.rule;
+                                var aclName = param.aclName;
+                                rule.sequence = param.seq + 1;
+                                that.createOrUpdateRule(aclName, rule); 
+                            };
+                            var opDelete = (param) => { 
+                                var rule = param.rule;
+                                rule.sequence = param.seq;
+                                var aclName = param.aclName;
+                                that.deleteRule(aclName, rule); 
+                             };
+                            operations.push(opCreate, opDelete);
+                            parameters.push(param, param);
+                        }
+                        var callback = () => resolve(aclName);
+                        that.chainPromises(operations, parameters, callback);
+                        
+                    }    
+                });
+        });
+    }
+
+    /**
+     * Executes sequentially the promises in the array by passing them the parameters of the second array
+     * Then runs the callback function if any
+     * @param {*} promises 
+     * @param {*} parameters 
+     * @param {*} callback 
+     */
+
+    async chainPromises(promises, parameters, callback) {
+        // then execute them sequentially
+        for (var p = 0; p < promises.length; p++) {
+            var promise = promises[p];
+            var param = parameters[p];
+            await promise(param);
+        }
+        if (callback) {
+            callback();
+        }
     }
 };
 
